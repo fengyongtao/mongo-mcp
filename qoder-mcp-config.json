@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mongo-mcp": {
+      "command": "node",
+      "args": ["C:\\Users\\fengyongtao\\AppData\\Roaming\\mongo-mcp\\dist\\index.js"],
+      "env": {
+        "MONGODB_URI": "mongodb://localhost:27017",
+        "MONGODB_DATABASE": "config_db",
+        "MONGODB_COLLECTION": "ConfigModules",
+        "KNOWLEDGE_DATABASE": "knowledge",
+        "KNOWLEDGE_COLLECTION": "context",
+        "ENABLE_CHANGE_STREAM": "false"
+      }
+    }
+  }
+}
