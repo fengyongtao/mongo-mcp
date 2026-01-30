@@ -7,12 +7,17 @@
   "bin": {
     "mongo-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "node build.mjs",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "keywords": [
     "mcp",
@@ -29,17 +34,20 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@xenova/transformers": "^2.17.2",
     "chokidar": "^3.6.0",
     "lodash": "^4.17.23",
     "mongodb": "^6.3.0",
     "zod": "^3.22.4"
+  },
+  "optionalDependencies": {
+    "@xenova/transformers": "^2.17.2"
   },
   "devDependencies": {
     "@types/lodash": "^4.17.23",
     "@types/node": "^20.10.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
+    "esbuild": "^0.20.0",
     "eslint": "^8.55.0",
     "tsx": "^4.6.0",
     "typescript": "^5.3.0"
