@@ -20,7 +20,7 @@ await esbuild.build({
     'chokidar',
   ],
   banner: {
-    js: '#!/usr/bin/env node',
+    js: '#!/usr/bin/env node\n',  // 添加换行符
   },
   sourcemap: true,
   minify: false, // 保持可读性便于调试
