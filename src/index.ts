@@ -7,7 +7,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { KnowledgeService } from './services/knowledge-service.js';
-import { createKnowledgeTools, McpTool } from './tools/knowledge-tools.js';
+import { createKnowledgeTools, McpTool } from './tools/index.js';
 import { loadConfig, validateConfig, createLogger } from './utils/config.js';
 
 /**

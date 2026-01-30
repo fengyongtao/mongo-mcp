@@ -47,6 +47,8 @@ export interface KnowledgeDocument {
   // === 同步相关 ===
   /** 同步版本号 */
   syncVersion: number;
+  /** 同步状态 */
+  syncStatus: 'synced' | 'pending' | 'conflict' | 'local_only';
   /** 最后同步时间 */
   lastSyncAt?: Date;
   

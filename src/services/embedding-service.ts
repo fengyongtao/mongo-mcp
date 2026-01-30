@@ -1,4 +1,5 @@
 import { pipeline, env } from '@xenova/transformers';
+import type { FeatureExtractor, EmbeddingOutput } from '../types/embedding.types.js';
 
 // 配置 Transformers.js - 禁用图像处理（不需要 sharp）
 env.allowLocalModels = false;
@@ -9,7 +10,7 @@ env.backends.onnx.wasm.numThreads = 1;
  * 嵌入服务 - 使用 Transformers.js 生成文本向量
  */
 export class EmbeddingService {
-  private extractor: any = null;
+  private extractor: FeatureExtractor | null = null;
   private modelName: string;
   private isInitializing: boolean = false;
   private initPromise: Promise<void> | null = null;
@@ -44,7 +45,7 @@ export class EmbeddingService {
     
     this.extractor = await pipeline('feature-extraction', this.modelName, {
       quantized: true,
-    });
+    }) as unknown as FeatureExtractor;
     
     const elapsed = Date.now() - startTime;
     console.log(`[Embedding] Model loaded in ${elapsed}ms`);
@@ -56,6 +57,10 @@ export class EmbeddingService {
   async embed(text: string): Promise<number[]> {
     await this.initialize();
     
+    if (!this.extractor) {
+      throw new Error('Embedding model not initialized');
+    }
+    
     const output = await this.extractor(text, {
       pooling: 'mean',
       normalize: true,
@@ -65,18 +70,34 @@ export class EmbeddingService {
   }
 
   /**
-   * 批量生成向量嵌入
+   * 批量生成向量嵌入（并行版本）
+   * @param texts 文本数组
+   * @param concurrency 并发数，默认 5
    */
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], concurrency: number = 5): Promise<number[][]> {
     await this.initialize();
     
-    const results: number[][] = [];
-    for (const text of texts) {
-      const embedding = await this.embed(text);
-      results.push(embedding);
+    const results: number[][] = new Array(texts.length);
+    
+    // 分批并行处理
+    for (let i = 0; i < texts.length; i += concurrency) {
+      const batch = texts.slice(i, i + concurrency);
+      const embeddings = await Promise.all(
+        batch.map(text => this.embed(text))
+      );
+      embeddings.forEach((emb, idx) => {
+        results[i + idx] = emb;
+      });
     }
     
     return results;
+  }
+
+  /**
+   * 检查服务是否已初始化
+   */
+  isInitialized(): boolean {
+    return this.extractor !== null;
   }
 
   /**

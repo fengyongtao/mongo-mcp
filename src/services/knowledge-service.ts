@@ -84,6 +84,38 @@ export class KnowledgeService {
     await this.collection.createIndex({ userId: 1, tags: 1 });
     // 时间排序
     await this.collection.createIndex({ userId: 1, updatedAt: -1 });
+
+    // ========== 新增复合索引 ==========
+    
+    // 类型 + 启用状态 + 时间（常用列表查询）
+    await this.collection.createIndex(
+      { userId: 1, type: 1, enabled: 1, updatedAt: -1 },
+      { name: 'user_type_enabled_updated' }
+    );
+
+    // 标签 + 启用状态（标签筛选）
+    await this.collection.createIndex(
+      { userId: 1, tags: 1, enabled: 1 },
+      { name: 'user_tags_enabled' }
+    );
+
+    // 同步状态查询（跨设备同步）
+    await this.collection.createIndex(
+      { userId: 1, syncVersion: 1, updatedAt: -1 },
+      { name: 'user_sync_updated' }
+    );
+
+    // IDE 来源查询
+    await this.collection.createIndex(
+      { userId: 1, ideSource: 1, type: 1 },
+      { name: 'user_ide_type' }
+    );
+
+    // 文本搜索索引
+    await this.collection.createIndex(
+      { name: 'text', description: 'text' },
+      { name: 'text_search', weights: { name: 10, description: 5 } }
+    );
   }
 
   /**
@@ -109,7 +141,7 @@ export class KnowledgeService {
    * 创建知识文档
    */
   async create(
-    doc: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt' | 'userId' | 'deviceId' | 'ideSource' | 'syncVersion'>
+    doc: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt' | 'userId' | 'deviceId' | 'ideSource' | 'syncVersion' | 'syncStatus'>
   ): Promise<KnowledgeDocument> {
     if (!this.collection) throw new Error('Not connected');
 
@@ -118,6 +150,7 @@ export class KnowledgeService {
       ...this.injectUserContext(doc),
       enabled: doc.enabled ?? true,
       syncVersion: 1,
+      syncStatus: 'local_only',
       createdAt: now,
       updatedAt: now,
     };
