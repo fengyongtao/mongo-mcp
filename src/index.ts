@@ -7,7 +7,10 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { KnowledgeService } from './services/knowledge-service.js';
-import { createKnowledgeTools, McpTool } from './tools/index.js';
+import { SyncEngine } from './services/sync-engine.js';
+import { SyncHistoryService } from './services/sync-history-service.js';
+import { AutoSyncScheduler } from './services/auto-sync/index.js';
+import { createKnowledgeTools, createAutoSyncTools, McpTool } from './tools/index.js';
 import { loadConfig, validateConfig, createLogger } from './utils/config.js';
 
 /**
@@ -113,14 +116,36 @@ async function main(): Promise<void> {
     }
   );
 
+  // 创建同步历史服务
+  const syncHistoryService = new SyncHistoryService(config.mongoUri, config.database);
+
+  // 自动同步调度器（延迟初始化）
+  let autoSyncScheduler: AutoSyncScheduler | null = null;
+
   try {
     // 连接 MongoDB
     await knowledgeService.connect();
     logger.info('Connected to MongoDB');
 
-    // 创建工具
+    // 连接同步历史服务
+    await syncHistoryService.connect();
+
+    // 创建同步引擎
+    const syncEngine = new SyncEngine(knowledgeService, syncHistoryService);
+
+    // 创建自动同步调度器（仅本地 → 远程单向同步）
+    autoSyncScheduler = new AutoSyncScheduler(syncEngine, {
+      autoStart: true, // MCP 服务启动时自动开始
+    });
+
+    // 创建基础工具
     const tools = createKnowledgeTools(knowledgeService, config.enableEmbedding);
-    logger.info(`Loaded ${tools.length} tools`);
+
+    // 添加自动同步工具
+    const autoSyncTools = createAutoSyncTools(() => autoSyncScheduler);
+    tools.push(...autoSyncTools);
+
+    logger.info(`Loaded ${tools.length} tools (including auto-sync tools)`);
 
     // 创建并启动服务器
     const server = await createStdioServer(tools);
@@ -129,10 +154,35 @@ async function main(): Promise<void> {
 
     logger.info('Server started in stdio mode');
 
+    // 自动启动同步调度器
+    try {
+      await autoSyncScheduler.start();
+      logger.info('Auto-sync scheduler started');
+    } catch (syncError) {
+      logger.warn('Failed to start auto-sync scheduler:', syncError);
+      // 不阻止服务启动，同步功能可以稍后手动启动
+    }
+
     // 优雅关闭
     const shutdown = async () => {
       logger.info('Shutting down...');
+
+      // 停止自动同步调度器
+      if (autoSyncScheduler) {
+        try {
+          await autoSyncScheduler.stop();
+          logger.info('Auto-sync scheduler stopped');
+        } catch {
+          // 忽略停止错误
+        }
+      }
+
+      // 断开同步历史服务
+      await syncHistoryService.disconnect();
+
+      // 断开知识库服务
       await knowledgeService.disconnect();
+
       process.exit(0);
     };
 

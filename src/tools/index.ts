@@ -12,6 +12,7 @@ import { createMemoryTools } from './handlers/memory.handler.js';
 import { createSyncTools } from './handlers/sync.handler.js';
 import { createShortcutTools } from './handlers/shortcut.handler.js';
 import { createEmbeddingTools } from './handlers/embedding.handler.js';
+import { createAutoSyncTools } from './handlers/auto-sync.handler.js';
 
 // 导出类型和常量
 export type { McpTool } from './types.js';
@@ -53,4 +54,5 @@ export {
   createSyncTools,
   createShortcutTools,
   createEmbeddingTools,
+  createAutoSyncTools,
 };

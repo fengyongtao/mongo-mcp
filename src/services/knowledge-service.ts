@@ -66,6 +66,13 @@ export class KnowledgeService {
   }
 
   /**
+   * 获取 MongoDB Collection（用于 ChangeStream 等高级功能）
+   */
+  getCollection(): Collection<KnowledgeDocument> | null {
+    return this.collection;
+  }
+
+  /**
    * 确保索引存在
    */
   private async ensureIndexes(): Promise<void> {
