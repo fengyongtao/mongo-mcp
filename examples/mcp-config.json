@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "此文件展示如何在各种 IDE 中配置 mongo-mcp",
+  "$comment": "此文件展示如何在各种 IDE 中配置 mongo-knowledge",
   
   "qoder": {
     "$comment": "Qoder IDE 配置示例",
     "mcpServers": {
-      "mongo-mcp": {
+      "mongo-knowledge": {
         "command": "npx",
-        "args": ["-y", "mongo-mcp"],
+        "args": ["-y", "mongo-knowledge"],
         "env": {
           "MONGO_URI": "mongodb://localhost:27017",
           "MONGO_DATABASE": "qoder_knowledge",
@@ -24,9 +24,9 @@
   "cursor": {
     "$comment": "Cursor IDE 配置示例（~/.cursor/mcp.json）",
     "mcpServers": {
-      "mongo-mcp": {
+      "mongo-knowledge": {
         "command": "npx",
-        "args": ["-y", "mongo-mcp"],
+        "args": ["-y", "mongo-knowledge"],
         "env": {
           "MONGO_URI": "mongodb://localhost:27017",
           "MONGO_DATABASE": "cursor_knowledge",
@@ -41,9 +41,9 @@
   "vscode": {
     "$comment": "VS Code 配置示例（.vscode/settings.json）",
     "mcp.servers": {
-      "mongo-mcp": {
+      "mongo-knowledge": {
         "command": "npx",
-        "args": ["-y", "mongo-mcp"],
+        "args": ["-y", "mongo-knowledge"],
         "env": {
           "MONGO_URI": "mongodb://localhost:27017",
           "MONGO_DATABASE": "vscode_knowledge",
@@ -57,9 +57,9 @@
   "local_development": {
     "$comment": "本地开发配置示例（使用本地构建）",
     "mcpServers": {
-      "mongo-mcp": {
+      "mongo-knowledge": {
         "command": "node",
-        "args": ["/path/to/mongo-mcp/dist/index.js"],
+        "args": ["/path/to/mongo-knowledge/dist/index.js"],
         "env": {
           "MONGO_URI": "mongodb://localhost:27017",
           "MONGO_DATABASE": "dev_knowledge",
@@ -76,9 +76,9 @@
   "shared_cloud": {
     "$comment": "云数据库共享配置示例（多设备同步）",
     "mcpServers": {
-      "mongo-mcp": {
+      "mongo-knowledge": {
         "command": "npx",
-        "args": ["-y", "mongo-mcp"],
+        "args": ["-y", "mongo-knowledge"],
         "env": {
           "MONGO_URI": "mongodb+srv://user:password@cluster.mongodb.net/?retryWrites=true&w=majority",
           "MONGO_DATABASE": "shared_knowledge",

@@ -45,7 +45,7 @@ const memories = [
     tags: ['记忆', '更新策略', 'upsert']
   },
   {
-    name: 'Mongo-MCP核心功能与定位',
+    name: 'Mongo-Knowledge核心功能与定位',
     content: `**核心功能定位**：MongoDB MCP Server —— 配置管理工具
 
 **关键能力**：
@@ -53,7 +53,7 @@ const memories = [
 - 基于MongoDB Change Stream的实时数据变更监听与响应
 - 支持知识库服务（knowledge-service）与MongoDB底层交互（mongo-service）`,
     description: 'project_introduction',
-    tags: ['mongo-mcp', '功能定位', 'MCP']
+    tags: ['mongo-knowledge', '功能定位', 'MCP']
   },
   {
     name: '项目源码目录结构与模块职责',
@@ -100,17 +100,17 @@ const rules = [
       priority: 1
     },
     description: '自动同步触发规则',
-    tags: ['自动同步', 'mongo-mcp', '触发器']
+    tags: ['自动同步', 'mongo-knowledge', '触发器']
   }
 ];
 
 // MCP 配置数据
 const mcps = [
   {
-    name: 'mongo-mcp',
+    name: 'mongo-knowledge',
     content: {
       command: 'node',
-      args: ['C:\\Users\\fengyongtao\\AppData\\Roaming\\mongo-mcp\\dist\\index.js'],
+      args: ['C:\\Users\\fengyongtao\\AppData\\Roaming\\mongo-knowledge\\dist\\index.js'],
       env: {
         ENABLE_CHANGE_STREAM: 'false',
         KNOWLEDGE_COLLECTION: 'context',

@@ -19,7 +19,7 @@ import { loadConfig, validateConfig, createLogger } from './utils/config.js';
 async function createStdioServer(tools: McpTool[]): Promise<Server> {
   const server = new Server(
     {
-      name: 'mongo-mcp',
+      name: 'mongo-knowledge',
       version: '1.0.0',
     },
     {

@@ -1,6 +1,6 @@
 import * as esbuild from 'esbuild';
 
-console.log('Building mongo-mcp...');
+console.log('Building mongo-knowledge...');
 
 await esbuild.build({
   entryPoints: ['src/index.ts'],
