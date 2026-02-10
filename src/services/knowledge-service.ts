@@ -1,10 +1,21 @@
 import { MongoClient, Db, Collection, ObjectId, Filter } from 'mongodb';
-import { KnowledgeDocument, KnowledgeType, MemoryDocument, McpDocument, SkillDocument, RuleDocument } from '../types.js';
-import { getEmbeddingService, EmbeddingService } from './embedding-service.js';
+import { KnowledgeDocument, KnowledgeType, ListOptions, SemanticSearchOptions } from '../types.js';
+import { getEmbeddingService } from './embedding-service.js';
+import type { SourceType } from '../types.js';
+
+/**
+ * 用户上下文配置
+ */
+export interface UserContext {
+  userId: string;
+  deviceId: string;
+  ideSource: SourceType;
+}
 
 /**
  * 知识库服务类
- * 管理 MCPs、Memories、Rules、Skills
+ * 管理 8 种知识类型：Memories, Skills, Rules, MCPs, Experiences, Commands, Contexts, Workflows
+ * 支持用户隔离和跨终端同步
  */
 export class KnowledgeService {
   private client: MongoClient | null = null;
@@ -13,11 +24,18 @@ export class KnowledgeService {
   private mongoUri: string;
   private database: string;
   private collectionName: string;
+  private userContext: UserContext;
 
-  constructor(mongoUri: string, database: string = 'knowledge', collectionName: string = 'context') {
+  constructor(
+    mongoUri: string,
+    database: string = 'mongo_mcp',
+    collectionName: string = 'knowledge',
+    userContext: UserContext = { userId: 'default', deviceId: 'unknown', ideSource: 'other' }
+  ) {
     this.mongoUri = mongoUri;
     this.database = database;
     this.collectionName = collectionName;
+    this.userContext = userContext;
   }
 
   /**
@@ -33,7 +51,6 @@ export class KnowledgeService {
 
     // 创建索引
     await this.ensureIndexes();
-    console.log(`[Knowledge] Connected to ${this.database}/${this.collectionName}`);
   }
 
   /**
@@ -49,27 +66,98 @@ export class KnowledgeService {
   }
 
   /**
+   * 获取 MongoDB Collection（用于 ChangeStream 等高级功能）
+   */
+  getCollection(): Collection<KnowledgeDocument> | null {
+    return this.collection;
+  }
+
+  /**
    * 确保索引存在
    */
   private async ensureIndexes(): Promise<void> {
     if (!this.collection) return;
 
-    await this.collection.createIndex({ type: 1, name: 1 }, { unique: true });
-    await this.collection.createIndex({ type: 1 });
-    await this.collection.createIndex({ tags: 1 });
-    await this.collection.createIndex({ updatedAt: -1 });
+    // 用户级唯一索引（同一用户下，type + name 唯一）
+    await this.collection.createIndex(
+      { userId: 1, type: 1, name: 1 },
+      { unique: true }
+    );
+    // 用户 + 类型查询
+    await this.collection.createIndex({ userId: 1, type: 1 });
+    // 用户 + 设备查询（跨设备同步）
+    await this.collection.createIndex({ userId: 1, deviceId: 1 });
+    // 标签查询
+    await this.collection.createIndex({ userId: 1, tags: 1 });
+    // 时间排序
+    await this.collection.createIndex({ userId: 1, updatedAt: -1 });
+
+    // ========== 新增复合索引 ==========
+    
+    // 类型 + 启用状态 + 时间（常用列表查询）
+    await this.collection.createIndex(
+      { userId: 1, type: 1, enabled: 1, updatedAt: -1 },
+      { name: 'user_type_enabled_updated' }
+    );
+
+    // 标签 + 启用状态（标签筛选）
+    await this.collection.createIndex(
+      { userId: 1, tags: 1, enabled: 1 },
+      { name: 'user_tags_enabled' }
+    );
+
+    // 同步状态查询（跨设备同步）
+    await this.collection.createIndex(
+      { userId: 1, syncVersion: 1, updatedAt: -1 },
+      { name: 'user_sync_updated' }
+    );
+
+    // IDE 来源查询
+    await this.collection.createIndex(
+      { userId: 1, ideSource: 1, type: 1 },
+      { name: 'user_ide_type' }
+    );
+
+    // 文本搜索索引
+    await this.collection.createIndex(
+      { name: 'text', description: 'text' },
+      { name: 'text_search', weights: { name: 10, description: 5 } }
+    );
+  }
+
+  /**
+   * 获取用户过滤器
+   */
+  private getUserFilter(): Filter<KnowledgeDocument> {
+    return { userId: this.userContext.userId };
+  }
+
+  /**
+   * 注入用户上下文到文档
+   */
+  private injectUserContext<T extends Partial<KnowledgeDocument>>(doc: T): T & UserContext {
+    return {
+      ...doc,
+      userId: this.userContext.userId,
+      deviceId: this.userContext.deviceId,
+      ideSource: this.userContext.ideSource,
+    };
   }
 
   /**
    * 创建知识文档
    */
-  async create(doc: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt'>): Promise<KnowledgeDocument> {
+  async create(
+    doc: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt' | 'userId' | 'deviceId' | 'ideSource' | 'syncVersion' | 'syncStatus'>
+  ): Promise<KnowledgeDocument> {
     if (!this.collection) throw new Error('Not connected');
 
     const now = new Date();
     const newDoc: KnowledgeDocument = {
-      ...doc,
+      ...this.injectUserContext(doc),
       enabled: doc.enabled ?? true,
+      syncVersion: 1,
+      syncStatus: 'local_only',
       createdAt: now,
       updatedAt: now,
     };
@@ -83,7 +171,11 @@ export class KnowledgeService {
    */
   async get(type: KnowledgeType, name: string): Promise<KnowledgeDocument | null> {
     if (!this.collection) throw new Error('Not connected');
-    return this.collection.findOne({ type, name });
+    return this.collection.findOne({
+      ...this.getUserFilter(),
+      type,
+      name,
+    });
   }
 
   /**
@@ -91,7 +183,10 @@ export class KnowledgeService {
    */
   async getById(id: string): Promise<KnowledgeDocument | null> {
     if (!this.collection) throw new Error('Not connected');
-    return this.collection.findOne({ _id: new ObjectId(id) });
+    return this.collection.findOne({
+      ...this.getUserFilter(),
+      _id: new ObjectId(id),
+    });
   }
 
   /**
@@ -100,13 +195,21 @@ export class KnowledgeService {
   async update(
     type: KnowledgeType,
     name: string,
-    updates: Partial<Omit<KnowledgeDocument, '_id' | 'type' | 'createdAt'>>
+    updates: Partial<Omit<KnowledgeDocument, '_id' | 'type' | 'createdAt' | 'userId'>>
   ): Promise<KnowledgeDocument | null> {
     if (!this.collection) throw new Error('Not connected');
 
     const result = await this.collection.findOneAndUpdate(
-      { type, name },
-      { $set: { ...updates, updatedAt: new Date() } },
+      { ...this.getUserFilter(), type, name },
+      {
+        $set: {
+          ...updates,
+          deviceId: this.userContext.deviceId,
+          ideSource: this.userContext.ideSource,
+          updatedAt: new Date(),
+        },
+        $inc: { syncVersion: 1 },
+      },
       { returnDocument: 'after' }
     );
 
@@ -118,29 +221,25 @@ export class KnowledgeService {
    */
   async delete(type: KnowledgeType, name: string): Promise<boolean> {
     if (!this.collection) throw new Error('Not connected');
-    const result = await this.collection.deleteOne({ type, name });
+    const result = await this.collection.deleteOne({
+      ...this.getUserFilter(),
+      type,
+      name,
+    });
     return result.deletedCount > 0;
   }
 
   /**
    * 列出指定类型的所有文档
    */
-  async list(type?: KnowledgeType, options?: {
-    tags?: string[];
-    enabled?: boolean;
-    search?: string;
-    source?: string;
-    limit?: number;
-    skip?: number;
-  }): Promise<KnowledgeDocument[]> {
+  async list(options?: ListOptions): Promise<KnowledgeDocument[]> {
     if (!this.collection) throw new Error('Not connected');
 
-    const filter: Filter<KnowledgeDocument> = {};
+    const filter: Filter<KnowledgeDocument> = this.getUserFilter();
 
-    if (type) filter.type = type;
+    if (options?.type) filter.type = options.type;
     if (options?.enabled !== undefined) filter.enabled = options.enabled;
     if (options?.tags?.length) filter.tags = { $in: options.tags };
-    if (options?.source) filter.source = options.source as any;
     if (options?.search) {
       filter.$or = [
         { name: { $regex: options.search, $options: 'i' } },
@@ -150,7 +249,7 @@ export class KnowledgeService {
 
     let cursor = this.collection.find(filter).sort({ updatedAt: -1 });
 
-    if (options?.skip) cursor = cursor.skip(options.skip);
+    if (options?.offset) cursor = cursor.skip(options.offset);
     if (options?.limit) cursor = cursor.limit(options.limit);
 
     return cursor.toArray();
@@ -163,14 +262,17 @@ export class KnowledgeService {
     if (!this.collection) throw new Error('Not connected');
 
     if (type) {
-      return this.collection.countDocuments({ type });
+      return this.collection.countDocuments({ ...this.getUserFilter(), type });
     }
 
-    const types: KnowledgeType[] = ['MCPs', 'Memories', 'Rules', 'Skills'];
+    const types: KnowledgeType[] = [
+      'MCPs', 'Memories', 'Rules', 'Skills',
+      'Experiences', 'Commands', 'Contexts', 'Workflows'
+    ];
     const counts: Record<string, number> = {};
 
     for (const t of types) {
-      counts[t] = await this.collection.countDocuments({ type: t });
+      counts[t] = await this.collection.countDocuments({ ...this.getUserFilter(), type: t });
     }
 
     return counts as Record<KnowledgeType, number>;
@@ -179,13 +281,16 @@ export class KnowledgeService {
   /**
    * 批量导入
    */
-  async bulkImport(docs: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt'>[]): Promise<number> {
+  async bulkImport(
+    docs: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt' | 'userId' | 'deviceId' | 'ideSource' | 'syncVersion'>[]
+  ): Promise<number> {
     if (!this.collection) throw new Error('Not connected');
 
     const now = new Date();
     const docsToInsert = docs.map(doc => ({
-      ...doc,
+      ...this.injectUserContext(doc),
       enabled: doc.enabled ?? true,
+      syncVersion: 1,
       createdAt: now,
       updatedAt: now,
     }));
@@ -198,23 +303,25 @@ export class KnowledgeService {
    * 批量导出
    */
   async bulkExport(type?: KnowledgeType): Promise<KnowledgeDocument[]> {
-    return this.list(type);
+    return this.list({ type });
   }
 
   /**
    * 语义搜索
    */
-  async semanticSearch(query: string, options?: {
-    type?: KnowledgeType;
-    limit?: number;
-    threshold?: number;
-  }): Promise<Array<KnowledgeDocument & { score: number }>> {
+  async semanticSearch(
+    query: string,
+    options?: SemanticSearchOptions
+  ): Promise<Array<KnowledgeDocument & { score: number }>> {
     if (!this.collection) throw new Error('Not connected');
 
     const embeddingService = getEmbeddingService();
     const queryEmbedding = await embeddingService.embed(query);
 
-    const filter: Filter<KnowledgeDocument> = { embedding: { $exists: true } };
+    const filter: Filter<KnowledgeDocument> = {
+      ...this.getUserFilter(),
+      embedding: { $exists: true },
+    };
     if (options?.type) filter.type = options.type;
 
     const docs = await this.collection.find(filter).toArray();
@@ -247,7 +354,7 @@ export class KnowledgeService {
     if (!this.collection) throw new Error('Not connected');
 
     const embeddingService = getEmbeddingService();
-    const filter: Filter<KnowledgeDocument> = {};
+    const filter: Filter<KnowledgeDocument> = this.getUserFilter();
     if (type) filter.type = type;
 
     const docs = await this.collection.find(filter).toArray();
@@ -268,7 +375,6 @@ export class KnowledgeService {
         }
       );
       count++;
-      console.log(`[Embedding] Generated for ${doc.type}/${doc.name} (${count}/${docs.length})`);
     }
 
     return count;
@@ -277,7 +383,9 @@ export class KnowledgeService {
   /**
    * 创建文档并生成嵌入
    */
-  async createWithEmbedding(doc: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt'>): Promise<KnowledgeDocument> {
+  async createWithEmbedding(
+    doc: Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt' | 'userId' | 'deviceId' | 'ideSource' | 'syncVersion'>
+  ): Promise<KnowledgeDocument> {
     const embeddingService = getEmbeddingService();
     const text = embeddingService.extractTextForEmbedding(doc as KnowledgeDocument);
     const embedding = await embeddingService.embed(text);
@@ -288,5 +396,48 @@ export class KnowledgeService {
       embeddingModel: embeddingService.getModelName(),
       embeddedAt: new Date()
     });
+  }
+
+  /**
+   * 获取用户上下文
+   */
+  getUserContext(): UserContext {
+    return { ...this.userContext };
+  }
+
+  /**
+   * 检查文档是否存在
+   */
+  async exists(type: KnowledgeType, name: string): Promise<boolean> {
+    if (!this.collection) throw new Error('Not connected');
+    const count = await this.collection.countDocuments({
+      ...this.getUserFilter(),
+      type,
+      name,
+    });
+    return count > 0;
+  }
+
+  /**
+   * 创建或更新文档（upsert）
+   */
+  async upsert(
+    type: KnowledgeType,
+    name: string,
+    doc: Partial<Omit<KnowledgeDocument, '_id' | 'type' | 'name' | 'createdAt' | 'userId'>>
+  ): Promise<KnowledgeDocument> {
+    const existing = await this.get(type, name);
+
+    if (existing) {
+      const updated = await this.update(type, name, doc);
+      return updated!;
+    } else {
+      return this.create({
+        type,
+        name,
+        content: doc.content || '',
+        ...doc,
+      } as Omit<KnowledgeDocument, '_id' | 'createdAt' | 'updatedAt' | 'userId' | 'deviceId' | 'ideSource' | 'syncVersion'>);
+    }
   }
 }
